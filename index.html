@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title id="app-title">Tienda de Ropa - Control de Stock y Ventas</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Integración con Firebase -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { 
+      getFirestore, collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, increment 
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyA--AnDl4pXrbSNeSXBwlRseJ2o0-QoZfE",
+      authDomain: "dojo-scout-karate-kids.firebaseapp.com",
+      projectId: "dojo-scout-karate-kids",
+      storageBucket: "dojo-scout-karate-kids.firebasestorage.app",
+      messagingSenderId: "69461854343",
+      appId: "1:69461854343:web:4a8a73fd9b9141a0b19022"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    window.db = db;
+    window.setDoc = setDoc;
+    window.doc = doc;
+    window.getDoc = getDoc;
+    window.getDocs = getDocs;
+    window.updateDoc = updateDoc;
+    window.deleteDoc = deleteDoc;
+    window.increment = increment;
+    window.collection = collection;
+  </script>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans text-gray-800">
+
+  <!-- PANTALLA DE LOGIN INICIAL -->
+  <div id="pantalla-login-inicial" class="fixed inset-0 bg-purple-900 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-4 text-center">
+      <h2 id="login-titulo-app" class="font-bold text-lg text-purple-900">TIENDA DE ROPA</h2>
+      <p class="text-xs text-gray-500">Iniciá sesión para comenzar a operar</p>
+
+      <div class="space-y-3 text-left">
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Seleccionar Usuario / Rol</label>
+          <select id="init-usuario" class="w-full border rounded-lg p-2 text-xs outline-none bg-gray-50 focus:ring-2 focus:ring-purple-500">
+            <option value="dueno">👑 Dueño / Administrador</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Contraseña</label>
+          <input type="password" id="init-clave" placeholder="Ingresá tu clave" class="w-full border rounded-lg p-2 text-xs outline-none focus:ring-2 focus:ring-purple-500" onkeydown="if(event.key === 'Enter') procesarIngresoInicial()">
+        </div>
+
+        <button onclick="procesarIngresoInicial()" class="w-full bg-purple-700 hover:bg-purple-800 text-white py-2.5 rounded-lg font-bold text-xs shadow transition">🔓 Ingresar al Sistema</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-xl mx-auto bg-white min-h-screen shadow-lg flex flex-col justify-between relative">
+    
+    <!-- HEADER -->
+    <header class="bg-purple-800 text-white p-4 shadow flex justify-between items-center">
+      <div>
+        <h1 id="header-nombre-tienda" class="font-bold text-lg">TIENDA DE ROPA</h1>
+        <p id="header-usuario-activo" class="text-xs text-purple-200">Sesión activa</p>
+      </div>
+      <button onclick="cerrarSesion()" class="text-xs bg-purple-950 hover:bg-red-900 px-3 py-1.5 rounded font-semibold transition">Cerrar Sesión</button>
+    </header>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <main class="p-4 flex-grow space-y-4">
+
+      <!-- ================= VISTA EMPLEADO (MOSTRADOR + HISTORIAL) ================= -->
+      <div id="vista-empleado" class="hidden space-y-4">
+        
+        <div class="flex border-b bg-purple-50 rounded-t-lg p-1 gap-1 text-xs">
+          <button onclick="cambiarSolapaEmpleado('vender')" id="emp-btn-vender" class="flex-1 py-2 px-3 font-bold rounded bg-purple-700 text-white transition">🛍️ Vender</button>
+          <button onclick="cambiarSolapaEmpleado('historial')" id="emp-btn-historial" class="flex-1 py-2 px-3 font-bold rounded text-purple-900 hover:bg-purple-200 transition">📋 Historial de Ventas</button>
+        </div>
+
+        <!-- Sub-vista Vender -->
+        <div id="emp-sub-vender" class="space-y-3">
+          <div>
+            <input type="text" id="pos-buscar-emp" oninput="filtrarPrendasPos()" placeholder="Buscar prenda por nombre, categoría o talle..." class="w-full border rounded-lg p-2 text-xs outline-none focus:ring-2 focus:ring-purple-500">
+          </div>
+
+          <div id="pos-lista-prendas" class="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto p-1 border rounded bg-gray-50 text-xs">
+            <!-- Dinámico -->
+          </div>
+
+          <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 space-y-2">
+            <h3 class="font-bold text-xs text-purple-900 border-b pb-1">🛒 Carrito de Compra</h3>
+            
+            <div id="pos-carrito-items" class="space-y-1 max-h-32 overflow-y-auto text-xs">
+              <p class="text-gray-400 text-center py-2">No hay prendas agregadas al carrito.</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 pt-2 border-t text-xs">
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-600">Ajuste de Precio (%)</label>
+                <select id="pos-tipo-ajuste" onchange="calcularTotalCarrito()" class="w-full border rounded p-1.5 text-xs bg-white outline-none">
+                  <option value="ninguno">Sin Ajuste (Precio Base)</option>
+                  <option value="descuento">Descuento (-%)</option>
+                  <option value="recargo">Recargo / Cuotas (+%)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-600">Porcentaje (%)</label>
+                <input type="number" id="pos-porcentaje-ajuste" onkeyup="calcularTotalCarrito()" onchange="calcularTotalCarrito()" placeholder="0" class="w-full border rounded p-1.5 text-xs outline-none">
+              </div>
+            </div>
+
+            <div class="space-y-2 pt-2 border-t">
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-600 mb-1">Medio de Pago</label>
+                <select id="pos-medio-pago" class="w-full border rounded p-2 text-xs bg-white font-semibold outline-none">
+                  <option value="Efectivo">💵 Efectivo</option>
+                  <option value="Transferencia/Tarjeta">💳 Transferencia / Tarjeta</option>
+                </select>
+              </div>
+
+              <div class="flex justify-between items-center text-sm font-bold text-purple-950 pt-1">
+                <span>TOTAL A COBRAR:</span>
+                <span id="pos-total-txt" class="text-base font-black text-green-700">$0</span>
+              </div>
+
+              <button onclick="confirmarVentaDirecta()" class="w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-lg font-bold text-xs shadow transition">✅ Confirmar y Cobrar Venta</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sub-vista Historial Empleado -->
+        <div id="emp-sub-historial" class="hidden space-y-3">
+          <h3 class="font-bold text-xs text-purple-900 border-b pb-1">📋 Historial de Ventas (Registradas)</h3>
+          <div id="lista-historial-empleado" class="space-y-2 text-xs max-h-80 overflow-y-auto">
+            <!-- Dinámico -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ================= VISTA DUEÑO: POR SOLAPAS ================= -->
+      <div id="vista-dueno" class="hidden space-y-4">
+        
+        <div class="flex border-b overflow-x-auto bg-purple-50 rounded-t-lg p-1 gap-1 text-xs">
+          <button onclick="cambiarSolapa('ventas')" id="tab-btn-ventas" class="flex-1 min-w-max py-2 px-3 font-bold rounded bg-purple-700 text-white transition">🛍️ Ventas</button>
+          <button onclick="cambiarSolapa('historial')" id="tab-btn-historial" class="flex-1 min-w-max py-2 px-3 font-bold rounded text-purple-900 hover:bg-purple-200 transition">📋 Historial</button>
+          <button onclick="cambiarSolapa('stock')" id="tab-btn-stock" class="flex-1 min-w-max py-2 px-3 font-bold rounded text-purple-900 hover:bg-purple-200 transition">📦 Stock</button>
+          <button onclick="cambiarSolapa('critico')" id="tab-btn-critico" class="flex-1 min-w-max py-2 px-3 font-bold rounded text-red-700 hover:bg-red-100 transition">🚨 Crítico</button>
+          <button onclick="cambiarSolapa('estadisticas')" id="tab-btn-estadisticas" class="flex-1 min-w-max py-2 px-3 font-bold rounded text-purple-900 hover:bg-purple-200 transition">📊 Estadísticas</button>
+          <button onclick="cambiarSolapa('config')" id="tab-btn-config" class="flex-1 min-w-max py-2 px-3 font-bold rounded text-purple-900 hover:bg-purple-200 transition">⚙️ Config</button>
+        </div>
+
+        <!-- SOLAPA 1: VENTAS (POS DUEÑO) -->
+        <div id="solapa-ventas" class="space-y-4">
+          <div class="flex justify-between items-center border-b pb-1">
+            <h3 class="font-bold text-sm text-purple-900">🛍️ Registrar Venta (Caja Administrador)</h3>
+          </div>
+          <div>
+            <input type="text" id="pos-buscar-dueno" oninput="filtrarPrendasPos()" placeholder="Buscar prenda por nombre, categoría o talle..." class="w-full border rounded-lg p-2 text-xs outline-none focus:ring-2 focus:ring-purple-500">
+          </div>
+          <div id="pos-lista-prendas-dueno" class="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto p-1 border rounded bg-gray-50 text-xs">
+            <!-- Dinámico -->
+          </div>
+          <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 space-y-2">
+            <h4 class="font-bold text-xs text-purple-900 border-b pb-1">🛒 Carrito de Compra</h4>
+            <div id="pos-carrito-items-dueno" class="space-y-1 max-h-32 overflow-y-auto text-xs">
+              <p class="text-gray-400 text-center py-2">No hay prendas agregadas al carrito.</p>
+            </div>
+            <div class="grid grid-cols-2 gap-2 pt-2 border-t text-xs">
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-600">Ajuste de Precio (%)</label>
+                <select id="pos-tipo-ajuste-dueno" onchange="calcularTotalCarrito()" class="w-full border rounded p-1.5 text-xs bg-white outline-none">
+                  <option value="ninguno">Sin Ajuste (Precio Base)</option>
+                  <option value="descuento">Descuento (-%)</option>
+                  <option value="recargo">Recargo / Cuotas (+%)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-600">Porcentaje (%)</label>
+                <input type="number" id="pos-porcentaje-ajuste-dueno" onkeyup="calcularTotalCarrito()" onchange="calcularTotalCarrito()" placeholder="0" class="w-full border rounded p-1.5 text-xs outline-none">
+              </div>
+            </div>
+            <div class="space-y-2 pt-2 border-t">
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-600 mb-1">Medio de Pago</label>
+                <select id="pos-medio-pago-dueno" class="w-full border rounded p-2 text-xs bg-white font-semibold outline-none">
+                  <option value="Efectivo">💵 Efectivo</option>
+                  <option value="Transferencia/Tarjeta">💳 Transferencia / Tarjeta</option>
+                </select>
+              </div>
+              <div class="flex justify-between items-center text-sm font-bold text-purple-950 pt-1">
+                <span>TOTAL A COBRAR:</span>
+                <span id="pos-total-txt-dueno" class="text-base font-black text-green-700">$0</span>
+              </div>
+              <button onclick="confirmarVentaDirecta()" class="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-bold text-xs shadow transition">✅ Confirmar y Cobrar Venta</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- SOLAPA 2: HISTORIAL DE VENTAS -->
+        <div id="solapa-historial" class="hidden space-y-3">
+          <div class="flex justify-between items-center border-b pb-1">
+            <h3 class="font-bold text-xs text-purple-900">📋 Historial General de Ventas (Con opción de Anular)</h3>
+          </div>
+          <div id="admin-lista-historial" class="space-y-2 text-xs max-h-80 overflow-y-auto">
+            <!-- Dinámico -->
+          </div>
+        </div>
+
+        <!-- SOLAPA 3: STOCK -->
+        <div id="solapa-stock" class="hidden space-y-4">
+          <div class="bg-gray-50 p-3 rounded-lg border space-y-3">
+            <h3 class="font-bold text-xs text-purple-900 border-b pb-1">📦 Cargar Nueva Prenda al Stock</h3>
+            <div>
+              <label class="block font-semibold text-gray-600">Nombre / Descripción</label>
+              <input type="text" id="stk-nombre" placeholder="Ej: Remera Algodón" class="w-full border rounded p-2 text-xs outline-none">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block font-semibold text-gray-600">Categoría</label>
+                <input type="text" id="stk-categoria" list="lista-categorias" placeholder="Ej: Remeras" class="w-full border rounded p-2 text-xs outline-none">
+                <datalist id="lista-categorias"></datalist>
+              </div>
+              <div>
+                <label class="block font-semibold text-gray-600">Talle</label>
+                <input type="text" id="stk-talle" placeholder="Ej: M, L, 42" class="w-full border rounded p-2 text-xs outline-none">
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="block font-semibold text-gray-600">Costo ($)</label>
+                <input type="number" id="stk-costo" onkeyup="calcularPrecioVentaAlta()" placeholder="0" class="w-full border rounded p-2 text-xs outline-none">
+              </div>
+              <div>
+                <label class="block font-semibold text-gray-600">% Ganancia</label>
+                <input type="number" id="stk-margen" onkeyup="calcularPrecioVentaAlta()" placeholder="100" class="w-full border rounded p-2 text-xs outline-none">
+              </div>
+              <div>
+                <label class="block font-semibold text-gray-600">Venta ($)</label>
+                <input type="number" id="stk-venta" placeholder="0" class="w-full border rounded p-2 text-xs outline-none">
+              </div>
+            </div>
+            <div>
+              <label class="block font-semibold text-gray-600">Stock Inicial</label>
+              <input type="number" id="stk-cantidad" placeholder="10" class="w-full border rounded p-2 text-xs outline-none">
+            </div>
+            <button onclick="guardarPrendaNueva()" class="w-full bg-purple-700 text-white py-2 rounded font-bold hover:bg-purple-800 transition">💾 Guardar Prenda</button>
+          </div>
+
+          <div class="space-y-2">
+            <h3 class="font-bold text-xs text-gray-700">📋 Inventario Completo y Eliminación</h3>
+            <input type="text" id="admin-buscar-stock" oninput="renderizarStockAdmin()" placeholder="Buscar en inventario..." class="w-full border rounded p-2 text-xs outline-none">
+            <div id="admin-lista-stock" class="space-y-2 text-xs max-h-60 overflow-y-auto">
+              <!-- Dinámico -->
+            </div>
+          </div>
+        </div>
+
+        <!-- SOLAPA 4: STOCK CRÍTICO (<= 3 UNIDADES) -->
+        <div id="solapa-critico" class="hidden space-y-3">
+          <div class="bg-red-50 border border-red-200 p-3 rounded-lg">
+            <h3 class="font-bold text-xs text-red-900">🚨 Alertas de Stock Crítico (3 o menos unidades)</h3>
+            <p class="text-[11px] text-red-700">Prendas que requieren reposición inmediata.</p>
+          </div>
+          <div id="admin-lista-critico" class="space-y-2 text-xs max-h-80 overflow-y-auto">
+            <!-- Dinámico -->
+          </div>
+        </div>
+
+        <!-- SOLAPA 5: ESTADÍSTICAS Y VENDEDORES -->
+        <div id="solapa-estadisticas" class="hidden space-y-3 text-xs">
+          <div class="bg-gray-50 p-3 rounded-lg border space-y-3">
+            <h3 class="font-bold text-xs text-purple-900">📊 Reporte de Rentabilidad y Caja</h3>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-[11px] text-gray-600 font-semibold">Desde:</label>
+                <input type="date" id="est-fecha-desde" class="w-full border rounded p-1 text-xs">
+              </div>
+              <div>
+                <label class="block text-[11px] text-gray-600 font-semibold">Hasta:</label>
+                <input type="date" id="est-fecha-hasta" class="w-full border rounded p-1 text-xs">
+              </div>
+            </div>
+            <button onclick="calcularEstadisticas()" class="w-full bg-purple-700 text-white py-1.5 rounded font-bold hover:bg-purple-800 transition">🔍 Filtrar Estadísticas</button>
+
+            <div class="grid grid-cols-2 gap-2 text-center pt-1">
+              <div class="bg-blue-100 p-2 rounded">
+                <p class="font-bold text-blue-800 text-[11px]">Venta Bruta Total</p>
+                <p class="text-sm font-black text-blue-950" id="est-bruto-total">$0</p>
+              </div>
+              <div class="bg-green-100 p-2 rounded">
+                <p class="font-bold text-green-800 text-[11px]">Ganancia Neta Real</p>
+                <p class="text-sm font-black text-green-950" id="est-neto-total">$0</p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 text-center">
+              <div class="bg-gray-200 p-1.5 rounded text-[11px]">
+                <span>💵 Efectivo: </span><strong id="est-efectivo">$0</strong>
+              </div>
+              <div class="bg-gray-200 p-1.5 rounded text-[11px]">
+                <span>💳 Transf/Tarj: </span><strong id="est-transferencia">$0</strong>
+              </div>
+            </div>
+
+            <div class="border-t pt-2 mt-2">
+              <p class="font-bold text-purple-900 mb-1">👤 Ventas por Vendedor:</p>
+              <div id="est-vendedores-lista" class="space-y-1 bg-white p-2 rounded border">
+                <!-- Dinámico -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SOLAPA 6: CONFIGURACIÓN Y USUARIOS -->
+        <div id="solapa-config" class="hidden space-y-3 text-xs">
+          <div class="bg-gray-50 p-3 rounded-lg border space-y-3">
+            <h3 class="font-bold text-xs text-purple-900">⚙️ Configuración del Negocio</h3>
+            <div class="space-y-1">
+              <label class="block font-semibold text-gray-600">Nombre del Local</label>
+              <div class="flex gap-2">
+                <input type="text" id="cfg-nombre-local" class="w-full border rounded p-2 text-xs outline-none">
+                <button onclick="guardarNombreLocal()" class="bg-purple-700 text-white px-3 rounded font-bold">Guardar</button>
+              </div>
+            </div>
+
+            <div class="space-y-1 border-t pt-2">
+              <label class="block font-semibold text-gray-600">Modificar Clave del Dueño</label>
+              <div class="flex gap-2">
+                <input type="text" id="cfg-nueva-clave-dueno" placeholder="Nueva contraseña" class="w-full border rounded p-2 text-xs outline-none">
+                <button onclick="guardarClaveDueno()" class="bg-purple-700 text-white px-3 rounded font-bold">Actualizar</button>
+              </div>
+            </div>
+
+            <div class="space-y-2 border-t pt-2">
+              <p class="font-bold text-gray-800">👤 Empleados Autorizados:</p>
+              <div class="grid grid-cols-2 gap-2">
+                <input type="text" id="emp-nombre" placeholder="Nombre (Ej: Pablo)" class="border rounded p-2 text-xs outline-none">
+                <input type="text" id="emp-clave" placeholder="Clave (Ej: 1234)" class="border rounded p-2 text-xs outline-none">
+              </div>
+              <button onclick="crearEmpleadoNuevo()" class="w-full bg-green-700 text-white py-1.5 rounded font-bold hover:bg-green-800 transition">➕ Agregar Empleado</button>
+              <div id="lista-empleados-creados" class="space-y-1 pt-2"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer id="footer-tienda" class="p-3 text-center text-xs text-gray-400 border-t">
+      TIENDA DE ROPA - Control de Stock y Ventas
+    </footer>
+  </div>
+
+  <script>
+    const CLAVE_MAESTRA = "802241";
+    
+    let configNegocio = {
+      nombreLocal: "TIENDA DE ROPA",
+      claveDueno: "1234",
+      empleados: []
+    };
+
+    let usuarioSesion = null;
+    let prendasCache = [];
+    let ventasCache = [];
+    let carritoPOS = [];
+
+    window.addEventListener("DOMContentLoaded", async () => {
+      setTimeout(async () => {
+        await cargarConfiguracion();
+        await cargarPrendas();
+        await cargarVentas();
+        renderizarListaPrendasPos();
+      }, 800);
+    });
+
+    async function cargarConfiguracion() {
+      try {
+        const docRef = window.doc(window.db, "tienda_ropa_config", "general");
+        const docSnap = await window.getDoc(docRef);
+        if (docSnap.exists()) {
+          configNegocio = { ...configNegocio, ...docSnap.data() };
+        } else {
+          await window.setDoc(docRef, configNegocio);
+        }
+        aplicarConfiguracionEnPantalla();
+      } catch (e) {
+        console.error("Error al cargar configuración:", e);
+      }
+    }
+
+    function aplicarConfiguracionEnPantalla() {
+      document.getElementById("header-nombre-tienda").innerText = configNegocio.nombreLocal;
+      document.getElementById("login-titulo-app").innerText = configNegocio.nombreLocal;
+      document.getElementById("app-title").innerText = `${configNegocio.nombreLocal} - Control de Stock y Ventas`;
+      document.getElementById("cfg-nombre-local").value = configNegocio.nombreLocal;
+      document.getElementById("footer-tienda").innerText = `${configNegocio.nombreLocal} - Sistema de Control de Stock y Ventas`;
+      actualizarSelectorUsuariosInit();
+      renderizarListaEmpleadosConfig();
+    }
+
+    function actualizarSelectorUsuariosInit() {
+      const select = document.getElementById("init-usuario");
+      select.innerHTML = `<option value="dueno">👑 Dueño / Administrador</option>`;
+      (configNegocio.empleados || []).forEach((emp, index) => {
+        select.innerHTML += `<option value="emp_${index}">👤 Empleado: ${emp.nombre}</option>`;
+      });
+    }
+
+    function procesarIngresoInicial() {
+      const valUsuario = document.getElementById("init-usuario").value;
+      const clave = document.getElementById("init-clave").value.trim();
+
+      if (clave === CLAVE_MAESTRA) {
+        usuarioSesion = { rol: "dueno", nombre: "Dueño (Maestro)" };
+        activarSistema();
+        return;
+      }
+
+      if (valUsuario === "dueno") {
+        if (clave === configNegocio.claveDueno) {
+          usuarioSesion = { rol: "dueno", nombre: "Dueño" };
+          activarSistema();
+        } else {
+          alert("Contraseña de Dueño incorrecta.");
+        }
+      } else if (valUsuario.startsWith("emp_")) {
+        const idx = parseInt(valUsuario.split("_")[1]);
+        const emp = configNegocio.empleados[idx];
+        if (emp && emp.clave === clave) {
+          usuarioSesion = { rol: "empleado", nombre: emp.nombre };
+          activarSistema();
+        } else {
+          alert("Contraseña de empleado incorrecta.");
+        }
+      }
+    }
+
+    function activarSistema() {
+      document.getElementById("pantalla-login-inicial").classList.add("hidden");
+      document.getElementById("header-usuario-activo").innerText = `Sesión: ${usuarioSesion.nombre}`;
+      
+      if (usuarioSesion.rol === "dueno") {
+        document.getElementById("vista-dueno").classList.remove("hidden");
+        document.getElementById("vista-empleado").classList.add("hidden");
+        cambiarSolapa('ventas');
+      } else {
+        document.getElementById("vista-dueno").classList.add("hidden");
+        document.getElementById("vista-empleado").classList.remove("hidden");
+        cambiarSolapaEmpleado('vender');
+      }
+    }
+
+    function cerrarSesion() {
+      usuarioSesion = null;
+      document.getElementById("init-clave").value = "";
+      document.getElementById("pantalla-login-inicial").classList.remove("hidden");
+      document.getElementById("vista-dueno").classList.add("hidden");
+      document.getElementById("vista-empleado").classList.add("hidden");
+    }
+
+    // --- NAVEGACIÓN SOLAPAS EMPLEADO ---
+    function cambiarSolapaEmpleado(sub) {
+      if(sub === 'vender') {
+        document.getElementById("emp-sub-vender").classList.remove("hidden");
+        document.getElementById("emp-sub-historial").classList.add("hidden");
+        document.getElementById("emp-btn-vender").className = "flex-1 py-2 px-3 font-bold rounded bg-purple-700 text-white transition";
+        document.getElementById("emp-btn-historial").className = "flex-1 py-2 px-3 font-bold rounded text-purple-900 hover:bg-purple-200 transition";
+        renderizarListaPrendasPos();
+      } else {
+        document.getElementById("emp-sub-vender").classList.add("hidden");
+        document.getElementById("emp-sub-historial").classList.remove("hidden");
+        document.getElementById("emp-btn-historial").className = "flex-1 py-2 px-3 font-bold rounded bg-purple-700 text-white transition";
+        document.getElementById("emp-btn-vender").className = "flex-1 py-2 px-3 font-bold rounded text-purple-900 hover:bg-purple-200 transition";
+        renderizarHistorialEmpleado();
+      }
+    }
+
+    // --- CAMBIO DE SOLAPAS DUEÑO ---
+    function cambiarSolapa(solapa) {
+      const solapas = ['ventas', 'historial', 'stock', 'critico', 'estadisticas', 'config'];
+      solapas.forEach(s => {
+        const elem = document.getElementById(`solapa-${s}`);
+        if(elem) elem.classList.add("hidden");
+        const btn = document.getElementById(`tab-btn-${s}`);
+        if(btn) {
+          btn.className = "flex-1 min-w-max py-2 px-3 font-bold rounded text-purple-900 hover:bg-purple-200 transition";
+          if(s === 'critico') btn.className = "flex-1 min-w-max py-2 px-3 font-bold rounded text-red-700 hover:bg-red-100 transition";
+        }
+      });
+
+      const solapaActiva = document.getElementById(`solapa-${solapa}`);
+      if(solapaActiva) solapaActiva.classList.remove("hidden");
+      const btnActivo = document.getElementById(`tab-btn-${solapa}`);
+      if(btnActivo) {
+        if(solapa === 'critico') {
+          btnActivo.className = "flex-1 min-w-max py-2 px-3 font-bold rounded bg-red-600 text-white transition";
+          renderizarStockCritico();
+        } else {
+          btnActivo.className = "flex-1 min-w-max py-2 px-3 font-bold rounded bg-purple-700 text-white transition";
+        }
+      }
+
+      if(solapa === 'stock') renderizarStockAdmin();
+      if(solapa === 'historial') renderizarHistorialDueno();
+      if(solapa === 'estadisticas') cargarEstadisticasDefault();
+    }
+
+    async function cargarPrendas() {
+      try {
+        const querySnapshot = await window.getDocs(window.collection(window.db, "tienda_ropa_prendas"));
+        prendasCache = [];
+        querySnapshot.forEach((doc) => {
+          prendasCache.push({ id: doc.id, ...doc.data() });
+        });
+        actualizarDatalistCategorias();
+      } catch (e) {
+        console.error("Error al cargar prendas:", e);
+      }
+    }
+
+    async function cargarVentas() {
+      try {
+        const querySnapshot = await window.getDocs(window.collection(window.db, "tienda_ropa_ventas"));
+        ventasCache = [];
+        querySnapshot.forEach((doc) => {
+          ventasCache.push({ id: doc.id, ...doc.data() });
+        });
+        ventasCache.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+      } catch (e) {
+        console.error("Error al cargar ventas:", e);
+      }
+    }
+
+    function actualizarDatalistCategorias() {
+      const datalist = document.getElementById("lista-categorias");
+      if(!datalist) return;
+      datalist.innerHTML = "";
+      const categorias = [...new Set(prendasCache.map(p => p.categoria).filter(Boolean))];
+      categorias.forEach(cat => {
+        datalist.innerHTML += `<option value="${cat}">`;
+      });
+    }
+
+    function calcularPrecioVentaAlta() {
+      const costo = parseFloat(document.getElementById("stk-costo").value) || 0;
+      const margen = parseFloat(document.getElementById("stk-margen").value) || 0;
+      if (costo > 0 && margen >= 0) {
+        const venta = costo + (costo * (margen / 100));
+        document.getElementById("stk-venta").value = Math.round(venta);
+      }
+    }
+
+    async function guardarPrendaNueva() {
+      const nombre = document.getElementById("stk-nombre").value.trim();
+      const categoria = document.getElementById("stk-categoria").value.trim() || "General";
+      const talle = document.getElementById("stk-talle").value.trim() || "Único";
+      const costo = parseFloat(document.getElementById("stk-costo").value) || 0;
+      const precioVenta = parseFloat(document.getElementById("stk-venta").value) || 0;
+      const cantidad = parseInt(document.getElementById("stk-cantidad").value) || 0;
+
+      if (!nombre || precioVenta <= 0) return;
+
+      const prendaId = Date.now().toString();
+      const nuevaPrenda = { nombre, categoria, talle, costo, precioVenta, stock: cantidad };
+
+      try {
+        await window.setDoc(window.doc(window.db, "tienda_ropa_prendas", prendaId), nuevaPrenda);
+        limpiarFormularioStock();
+        await cargarPrendas();
+        renderizarListaPrendasPos();
+        renderizarStockAdmin();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function limpiarFormularioStock() {
+      document.getElementById("stk-nombre").value = "";
+      document.getElementById("stk-categoria").value = "";
+      document.getElementById("stk-talle").value = "";
+      document.getElementById("stk-costo").value = "";
+      document.getElementById("stk-margen").value = "";
+      document.getElementById("stk-venta").value = "";
+      document.getElementById("stk-cantidad").value = "";
+    }
+
+    function renderizarStockAdmin() {
+      const div = document.getElementById("admin-lista-stock");
+      if(!div) return;
+      div.innerHTML = "";
+      const txt = (document.getElementById("admin-buscar-stock")?.value || "").toLowerCase();
+
+      const filtradas = prendasCache.filter(p => 
+        p.nombre.toLowerCase().includes(txt) || 
+        p.categoria.toLowerCase().includes(txt) || 
+        p.talle.toLowerCase().includes(txt)
+      );
+
+      filtradas.forEach(p => {
+        const item = document.createElement("div");
+        item.className = "border p-2 rounded bg-white shadow-sm flex justify-between items-center";
+
+        let badgeStock = `<span class="bg-green-100 text-green-800 font-bold px-2 py-0.5 rounded text-[10px]">Stock: ${p.stock} u.</span>`;
+        if (p.stock <= 0) {
+          badgeStock = `<span class="bg-red-100 text-red-800 font-bold px-2 py-0.5 rounded text-[10px]">AGOTADO (0)</span>`;
+        } else if (p.stock <= 3) {
+          badgeStock = `<span class="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded text-[10px]">¡Últimas ${p.stock}!</span>`;
+        }
+
+        item.innerHTML = `
+          <div>
+            <p class="font-bold text-purple-900">${p.nombre} <span class="text-gray-500 font-normal">(${p.categoria} - Talle: ${p.talle})</span></p>
+            <p class="text-gray-600 text-[11px]">Costo: $${p.costo.toLocaleString("es-AR")} | Venta: <strong>$${p.precioVenta.toLocaleString("es-AR")}</strong></p>
+          </div>
+          <div class="flex items-center gap-1">
+            ${badgeStock}
+            <button onclick="modificarStockRapido('${p.id}', 'sumar')" class="bg-gray-200 hover:bg-gray-300 font-bold px-2 py-0.5 rounded text-xs">+</button>
+            <button onclick="modificarStockRapido('${p.id}', 'restar')" class="bg-gray-200 hover:bg-gray-300 font-bold px-2 py-0.5 rounded text-xs">-</button>
+            <button onclick="eliminarPrenda('${p.id}')" class="bg-red-100 hover:bg-red-200 text-red-700 font-bold px-2 py-0.5 rounded text-xs ml-1" title="Eliminar prenda">🗑️</button>
+          </div>
+        `;
+        div.appendChild(item);
+      });
+    }
+
+    async function eliminarPrenda(idPrenda) {
+      if(!confirm("¿Estás seguro de eliminar esta prenda del sistema?")) return;
+      try {
+        await window.deleteDoc(window.doc(window.db, "tienda_ropa_prendas", idPrenda));
+        await cargarPrendas();
+        renderizarStockAdmin();
+        renderizarStockCritico();
+        renderizarListaPrendasPos();
+      } catch (e) {
+        console.error("Error al eliminar prenda:", e);
+      }
+    }
+
+    function renderizarStockCritico() {
+      const div = document.getElementById("admin-lista-critico");
+      if(!div) return;
+      div.innerHTML = "";
+
+      const criticos = prendasCache.filter(p => p.stock <= 3);
+
+      if(criticos.length === 0) {
+        div.innerHTML = "<p class='text-gray-400 text-center py-4'>¡Excelente! No hay prendas con stock crítico.</p>";
+        return;
+      }
+
+      criticos.forEach(p => {
+        const item = document.createElement("div");
+        item.className = "border border-red-200 p-2 rounded bg-red-50 shadow-sm flex justify-between items-center";
+        let txtEstado = p.stock === 0 ? "AGOTADO (0 u.)" : `¡Últimas ${p.stock} u.!`;
+
+        item.innerHTML = `
+          <div>
+            <p class="font-bold text-red-900">${p.nombre} <span class="text-gray-600 font-normal">(${p.categoria} - Talle: ${p.talle})</span></p>
+            <p class="text-red-700 font-semibold text-[11px]">${txtEstado}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="modificarStockRapido('${p.id}', 'sumar')" class="bg-white border border-red-300 hover:bg-red-100 text-red-900 font-bold px-2 py-1 rounded text-xs">Reponer (+)</button>
+          </div>
+        `;
+        div.appendChild(item);
+      });
+    }
+
+    // --- MODIFICACIÓN MÚLTIPLE DE STOCK (SUMAR O RESTAR N CANTIDADES) ---
+    async function modificarStockRapido(idPrenda, accion) {
+      const prenda = prendasCache.find(p => p.id === idPrenda);
+      if (!prenda) return;
+
+      let mensaje = accion === 'sumar' 
+        ? `¿Cuántas unidades querés AGREGAR al stock de "${prenda.nombre}"?` 
+        : `¿Cuántas unidades querés RETIRAR del stock de "${prenda.nombre}"? (Stock actual: ${prenda.stock})`;
+
+      const inputCantidad = prompt(mensaje, "1");
+      if (inputCantidad === null) return; // Si cancela la ventana
+
+      const cantidadIngresada = parseInt(inputCantidad);
+      if (isNaN(cantidadIngresada) || cantidadIngresada <= 0) return;
+
+      let nuevoStock = prenda.stock;
+      if (accion === 'sumar') {
+        nuevoStock += cantidadIngresada;
+      } else {
+        nuevoStock -= cantidadIngresada;
+        if (nuevoStock < 0) nuevoStock = 0; // Evitar stock negativo
+      }
+
+      try {
+        await window.updateDoc(window.doc(window.db, "tienda_ropa_prendas", idPrenda), { stock: nuevoStock });
+        await cargarPrendas();
+        renderizarStockAdmin();
+        renderizarStockCritico();
+        renderizarListaPrendasPos();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    // --- HISTORIAL DE VENTAS ---
+    function renderizarHistorialEmpleado() {
+      const div = document.getElementById("lista-historial-empleado");
+      if(!div) return;
+      div.innerHTML = "";
+
+      if(ventasCache.length === 0) {
+        div.innerHTML = "<p class='text-gray-400 text-center py-4'>No hay ventas registradas.</p>";
+        return;
+      }
+
+      ventasCache.forEach(v => {
+        const fechaFmt = new Date(v.fecha).toLocaleString("es-AR");
+        const card = document.createElement("div");
+        card.className = "border p-2 rounded bg-white shadow-sm space-y-1";
+        
+        let itemsTxt = "";
+        (v.items || []).forEach(i => {
+          itemsTxt += `<p class='text-gray-600'>- ${i.nombre} (Talle: ${i.talle}) x ${i.cantidad} = $${(i.precioVenta * i.cantidad).toLocaleString("es-AR")}</p>`;
+        });
+
+        card.innerHTML = `
+          <div class="flex justify-between items-center border-b pb-1">
+            <span class="font-bold text-purple-900">📅 ${fechaFmt}</span>
+            <span class="bg-green-100 text-green-800 font-bold px-1.5 py-0.5 rounded">$${v.totalVenta.toLocaleString("es-AR")}</span>
+          </div>
+          <div class="text-[11px]">${itemsTxt}</div>
+          <div class="text-[10px] text-gray-400 flex justify-between">
+            <span>Pago: ${v.medioPago}</span>
+            <span>Vendedor: ${v.vendedor}</span>
+          </div>
+        `;
+        div.appendChild(card);
+      });
+    }
+
+    function renderizarHistorialDueno() {
+      const div = document.getElementById("admin-lista-historial");
+      if(!div) return;
+      div.innerHTML = "";
+
+      if(ventasCache.length === 0) {
+        div.innerHTML = "<p class='text-gray-400 text-center py-4'>No hay ventas registradas.</p>";
+        return;
+      }
+
+      ventasCache.forEach(v => {
+        const fechaFmt = new Date(v.fecha).toLocaleString("es-AR");
+        const card = document.createElement("div");
+        card.className = "border p-2 rounded bg-white shadow-sm space-y-1";
+        
+        let itemsTxt = "";
+        (v.items || []).forEach(i => {
+          itemsTxt += `<p class='text-gray-600'>- ${i.nombre} (Talle: ${i.talle}) x ${i.cantidad} = $${(i.precioVenta * i.cantidad).toLocaleString("es-AR")}</p>`;
+        });
+
+        card.innerHTML = `
+          <div class="flex justify-between items-center border-b pb-1">
+            <span class="font-bold text-purple-900">📅 ${fechaFmt}</span>
+            <div class="flex items-center gap-2">
+              <span class="bg-green-100 text-green-800 font-bold px-1.5 py-0.5 rounded">$${v.totalVenta.toLocaleString("es-AR")}</span>
+              <button onclick="anularVenta('${v.id}')" class="bg-red-600 hover:bg-red-700 text-white font-bold px-2 py-0.5 rounded text-[11px]">Anular Venta</button>
+            </div>
+          </div>
+          <div class="text-[11px]">${itemsTxt}</div>
+          <div class="text-[10px] text-gray-400 flex justify-between">
+            <span>Pago: ${v.medioPago}</span>
+            <span>Vendedor: ${v.vendedor}</span>
+          </div>
+        `;
+        div.appendChild(card);
+      });
+    }
+
+    async function anularVenta(idVenta) {
+      if(!confirm("¿Estás seguro de ANULAR esta venta? Se devolverá el stock y se descontará de la caja.")) return;
+
+      const venta = ventasCache.find(v => v.id === idVenta);
+      if(!venta) return;
+
+      try {
+        for(const item of venta.items) {
+          const docRef = window.doc(window.db, "tienda_ropa_prendas", item.id);
+          await window.updateDoc(docRef, { stock: window.increment(item.cantidad) });
+        }
+
+        await window.deleteDoc(window.doc(window.db, "tienda_ropa_ventas", idVenta));
+
+        await cargarPrendas();
+        await cargarVentas();
+        renderizarHistorialDueno();
+        renderizarStockAdmin();
+        renderizarListaPrendasPos();
+      } catch (e) {
+        console.error("Error al anular venta:", e);
+      }
+    }
+
+    // --- POS / CARRITO COMPARTIDO ---
+    function renderizarListaPrendasPos() {
+      const esDueno = usuarioSesion && usuarioSesion.rol === 'dueno';
+      const idContenedor = esDueno ? "pos-lista-prendas-dueno" : "pos-lista-prendas";
+      const idBuscador = esDueno ? "pos-buscar-dueno" : "pos-buscar-emp";
+
+      const div = document.getElementById(idContenedor);
+      if(!div) return;
+      div.innerHTML = "";
+      
+      const txt = (document.getElementById(idBuscador)?.value || "").toLowerCase();
+
+      const filtradas = prendasCache.filter(p => 
+        p.nombre.toLowerCase().includes(txt) || 
+        p.categoria.toLowerCase().includes(txt) || 
+        p.talle.toLowerCase().includes(txt)
+      );
+
+      if (filtradas.length === 0) {
+        div.innerHTML = "<p class='text-gray-400 text-center py-2'>No se encontraron prendas.</p>";
+        return;
+      }
+
+      filtradas.forEach(p => {
+        let badgeStockEmpleado = `<span class="text-green-700 font-semibold text-[11px]">Stock: ${p.stock}</span>`;
+        if (p.stock <= 0) {
+          badgeStockEmpleado = `<span class="text-red-600 font-bold text-[11px]">Agotado</span>`;
+        } else if (p.stock <= 3) {
+          badgeStockEmpleado = `<span class="text-amber-700 font-bold text-[11px]">¡Últimas ${p.stock}!</span>`;
+        }
+
+        const btnDisabled = p.stock <= 0 ? "disabled class='opacity-50 border p-2 rounded text-left bg-gray-100 cursor-not-allowed'" : "class='border p-2 rounded text-left bg-white hover:bg-purple-50 transition flex justify-between items-center'";
+        
+        const card = document.createElement("div");
+        card.innerHTML = `
+          <button onclick="agregarAlCarrito('${p.id}')" ${btnDisabled} style="width:100%">
+            <div>
+              <p class="font-bold text-purple-900">${p.nombre}</p>
+              <p class="text-gray-500 text-[11px]">${p.categoria} | Talle: <strong>${p.talle}</strong> | ${badgeStockEmpleado}</p>
+            </div>
+            <strong class="text-green-700 text-xs">$${p.precioVenta.toLocaleString("es-AR")}</strong>
+          </button>
+        `;
+        div.appendChild(card);
+      });
+    }
+
+    function filtrarPrendasPos() {
+      renderizarListaPrendasPos();
+    }
+
+    function agregarAlCarrito(idPrenda) {
+      const prenda = prendasCache.find(p => p.id === idPrenda);
+      if (!prenda || prenda.stock <= 0) return;
+
+      const enCarrito = carritoPOS.find(c => c.id === idPrenda);
+      if (enCarrito) {
+        if (enCarrito.cantidad + 1 > prenda.stock) return;
+        enCarrito.cantidad += 1;
+      } else {
+        carritoPOS.push({
+          id: prenda.id,
+          nombre: prenda.nombre,
+          talle: prenda.talle,
+          costo: prenda.costo,
+          precioVenta: prenda.precioVenta,
+          cantidad: 1
+        });
+      }
+      renderizarCarrito();
+    }
+
+    function renderizarCarrito() {
+      const esDueno = usuarioSesion && usuarioSesion.rol === 'dueno';
+      const idContenedor = esDueno ? "pos-carrito-items-dueno" : "pos-carrito-items";
+      const div = document.getElementById(idContenedor);
+      if(!div) return;
+      div.innerHTML = "";
+
+      if (carritoPOS.length === 0) {
+        div.innerHTML = "<p class='text-gray-400 text-center py-2'>No hay prendas agregadas al carrito.</p>";
+        calcularTotalCarrito();
+        return;
+      }
+
+      carritoPOS.forEach((item, idx) => {
+        const subtotal = item.precioVenta * item.cantidad;
+        const row = document.createElement("div");
+        row.className = "flex justify-between items-center border-b pb-1";
+        row.innerHTML = `
+          <div>
+            <p class="font-semibold text-gray-800">${item.nombre} <span class="text-gray-500 text-[10px]">(${item.talle})</span></p>
+            <p class="text-gray-500 text-[10px]">$${item.precioVenta.toLocaleString("es-AR")} x ${item.cantidad} = <strong>$${subtotal.toLocaleString("es-AR")}</strong></p>
+          </div>
+          <div class="flex items-center gap-1">
+            <button onclick="cambiarCantidadCarrito(${idx}, 1)" class="bg-gray-200 hover:bg-gray-300 font-bold px-1.5 py-0.5 rounded text-[10px]">+</button>
+            <button onclick="cambiarCantidadCarrito(${idx}, -1)" class="bg-gray-200 hover:bg-gray-300 font-bold px-1.5 py-0.5 rounded text-[10px]">-</button>
+          </div>
+        `;
+        div.appendChild(row);
+      });
+      calcularTotalCarrito();
+    }
+
+    function cambiarCantidadCarrito(index, cambio) {
+      const item = carritoPOS[index];
+      const prendaStock = prendasCache.find(p => p.id === item.id);
+
+      item.cantidad += cambio;
+      if (item.cantidad > prendaStock.stock) item.cantidad = prendaStock.stock;
+      if (item.cantidad <= 0) carritoPOS.splice(index, 1);
+
+      renderizarCarrito();
+    }
+
+    function calcularTotalCarrito() {
+      let subtotalBase = 0;
+      carritoPOS.forEach(i => subtotalBase += (i.precioVenta * i.cantidad));
+
+      const esDueno = usuarioSesion && usuarioSesion.rol === 'dueno';
+      const idTipo = esDueno ? "pos-tipo-ajuste-dueno" : "pos-tipo-ajuste";
+      const idPct = esDueno ? "pos-porcentaje-ajuste-dueno" : "pos-porcentaje-ajuste";
+      const idTotalTxt = esDueno ? "pos-total-txt-dueno" : "pos-total-txt";
+
+      const tipoAjuste = document.getElementById(idTipo)?.value || "ninguno";
+      const pct = parseFloat(document.getElementById(idPct)?.value) || 0;
+
+      let totalFinal = subtotalBase;
+      if (tipoAjuste === "descuento" && pct > 0) {
+        totalFinal = subtotalBase - (subtotalBase * (pct / 100));
+      } else if (tipoAjuste === "recargo" && pct > 0) {
+        totalFinal = subtotalBase + (subtotalBase * (pct / 100));
+      }
+
+      const txtElem = document.getElementById(idTotalTxt);
+      if(txtElem) txtElem.innerText = `$${Math.round(totalFinal).toLocaleString("es-AR")}`;
+      return Math.round(totalFinal);
+    }
+
+    async function confirmarVentaDirecta() {
+      if (carritoPOS.length === 0) return;
+
+      const esDueno = usuarioSesion && usuarioSesion.rol === 'dueno';
+      const idMedio = esDueno ? "pos-medio-pago-dueno" : "pos-medio-pago";
+      const idPct = esDueno ? "pos-porcentaje-ajuste-dueno" : "pos-porcentaje-ajuste";
+      const idTipo = esDueno ? "pos-tipo-ajuste-dueno" : "pos-tipo-ajuste";
+
+      const totalVenta = calcularTotalCarrito();
+      const medioPago = document.getElementById(idMedio).value;
+      const vendedor = usuarioSesion ? usuarioSesion.nombre : "Mostrador";
+      const fechaVenta = new Date().toISOString();
+
+      let costoTotalVenta = 0;
+      carritoPOS.forEach(i => costoTotalVenta += (i.costo * i.cantidad));
+
+      const objetoVenta = {
+        fecha: fechaVenta,
+        items: carritoPOS,
+        totalVenta,
+        costoTotalVenta,
+        gananciaNeta: totalVenta - costoTotalVenta,
+        medioPago,
+        vendedor
+      };
+
+      try {
+        await window.setDoc(window.doc(window.db, "tienda_ropa_ventas", Date.now().toString()), objetoVenta);
+
+        for (const item of carritoPOS) {
+          const docRef = window.doc(window.db, "tienda_ropa_prendas", item.id);
+          await window.updateDoc(docRef, { stock: window.increment(-item.cantidad) });
+        }
+
+        carritoPOS = [];
+        const pctInput = document.getElementById(idPct);
+        const tipoSelect = document.getElementById(idTipo);
+        if(pctInput) pctInput.value = "";
+        if(tipoSelect) tipoSelect.value = "ninguno";
+
+        renderizarCarrito();
+        await cargarPrendas();
+        await cargarVentas();
+        renderizarListaPrendasPos();
+        if(esDueno) renderizarStockAdmin();
+
+      } catch (e) {
+        console.error("Error al registrar venta:", e);
+      }
+    }
+
+    function cargarEstadisticasDefault() {
+      const hoy = new Date();
+      const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
+      const hoyStr = hoy.toISOString().split('T')[0];
+
+      const desdeElem = document.getElementById("est-fecha-desde");
+      const hastaElem = document.getElementById("est-fecha-hasta");
+      if(desdeElem) desdeElem.value = primerDiaMes;
+      if(hastaElem) hastaElem.value = hoyStr;
+      calcularEstadisticas();
+    }
+
+    async function calcularEstadisticas() {
+      const fDesde = document.getElementById("est-fecha-desde")?.value;
+      const fHasta = document.getElementById("est-fecha-hasta")?.value;
+
+      if (!fDesde || !fHasta) return;
+
+      try {
+        let brutoTotal = 0;
+        let netoTotal = 0;
+        let efectivoTotal = 0;
+        let transfTotal = 0;
+        let ventasPorVendedor = {};
+
+        ventasCache.forEach(v => {
+          const fechaVentaStr = v.fecha.split('T')[0];
+
+          if (fechaVentaStr >= fDesde && fechaVentaStr <= fHasta) {
+            brutoTotal += v.totalVenta;
+            netoTotal += v.gananciaNeta;
+
+            if (v.medioPago === "Efectivo") efectivoTotal += v.totalVenta;
+            else transfTotal += v.totalVenta;
+
+            const vend = v.vendedor || "Desconocido";
+            if (!ventasPorVendedor[vend]) ventasPorVendedor[vend] = { total: 0, cantidad: 0 };
+            ventasPorVendedor[vend].total += v.totalVenta;
+            ventasPorVendedor[vend].cantidad += 1;
+          }
+        });
+
+        const brutoElem = document.getElementById("est-bruto-total");
+        const netoElem = document.getElementById("est-neto-total");
+        const efecElem = document.getElementById("est-efectivo");
+        const transElem = document.getElementById("est-transferencia");
+
+        if(brutoElem) brutoElem.innerText = `$${brutoTotal.toLocaleString("es-AR")}`;
+        if(netoElem) netoElem.innerText = `$${netoTotal.toLocaleString("es-AR")}`;
+        if(efecElem) efecElem.innerText = `$${efectivoTotal.toLocaleString("es-AR")}`;
+        if(transElem) transElem.innerText = `$${transfTotal.toLocaleString("es-AR")}`;
+
+        const divVendedores = document.getElementById("est-vendedores-lista");
+        if(divVendedores) {
+          divVendedores.innerHTML = "";
+          const nombresVendedores = Object.keys(ventasPorVendedor);
+          if (nombresVendedores.length === 0) {
+            divVendedores.innerHTML = "<p class='text-gray-400 text-center text-[11px]'>No hay ventas en este período.</p>";
+          } else {
+            nombresVendedores.forEach(vend => {
+              const datos = ventasPorVendedor[vend];
+              const row = document.createElement("div");
+              row.className = "flex justify-between items-center text-xs py-1 border-b last:border-0";
+              row.innerHTML = `
+                <span>👤 <strong>${vend}</strong> (${datos.cantidad} ventas)</span>
+                <strong class="text-purple-900">$${datos.total.toLocaleString("es-AR")}</strong>
+              `;
+              divVendedores.appendChild(row);
+            });
+          }
+        }
+      } catch (e) {
+        console.error("Error al calcular estadísticas:", e);
+      }
+    }
+
+    async function guardarNombreLocal() {
+      const nuevoNombre = document.getElementById("cfg-nombre-local").value.trim();
+      if (!nuevoNombre) return;
+      configNegocio.nombreLocal = nuevoNombre;
+      await guardarConfiguracionBase();
+      aplicarConfiguracionEnPantalla();
+    }
+
+    async function guardarClaveDueno() {
+      const nuevaClave = document.getElementById("cfg-nueva-clave-dueno").value.trim();
+      if (!nuevaClave) return;
+      configNegocio.claveDueno = nuevaClave;
+      await guardarConfiguracionBase();
+      document.getElementById("cfg-nueva-clave-dueno").value = "";
+    }
+
+    async function crearEmpleadoNuevo() {
+      const nombre = document.getElementById("emp-nombre").value.trim();
+      const clave = document.getElementById("emp-clave").value.trim();
+      if (!nombre || !clave) return;
+
+      if (!configNegocio.empleados) configNegocio.empleados = [];
+      configNegocio.empleados.push({ nombre, clave });
+
+      await guardarConfiguracionBase();
+      document.getElementById("emp-nombre").value = "";
+      document.getElementById("emp-clave").value = "";
+      aplicarConfiguracionEnPantalla();
+    }
+
+    async function eliminarEmpleado(index) {
+      configNegocio.empleados.splice(index, 1);
+      await guardarConfiguracionBase();
+      aplicarConfiguracionEnPantalla();
+    }
+
+    function renderizarListaEmpleadosConfig() {
+      const div = document.getElementById("lista-empleados-creados");
+      if(!div) return;
+      div.innerHTML = "";
+
+      (configNegocio.empleados || []).forEach((emp, i) => {
+        const item = document.createElement("div");
+        item.className = "flex justify-between items-center bg-white border p-1.5 rounded text-xs";
+        item.innerHTML = `
+          <span>👤 <strong>${emp.nombre}</strong> (Clave: ${emp.clave})</span>
+          <button onclick="eliminarEmpleado(${i})" class="text-red-600 font-bold px-1 text-[11px]">✕</button>
+        `;
+        div.appendChild(item);
+      });
+    }
+
+    async function guardarConfiguracionBase() {
+      try {
+        await window.setDoc(window.doc(window.db, "tienda_ropa_config", "general"), configNegocio);
+      } catch (e) {
+        console.error("Error al guardar configuración:", e);
+      }
+    }
+  </script>
+</body>
+</html>
